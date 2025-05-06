@@ -1,0 +1,5 @@
+curl -X POST http://localhost:8000/auth/logout -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjozLCJleHAiOjE3NDY1NzM2NDZ9.vcMyLEJbYi_Nas3Pv5koG6cIAMjaXePd236whNWO488"
+
+validação 
+
+curl -X GET http://localhost:8000/auth/validate_session -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjozLCJleHAiOjE3NDY1NjkyNTJ9.Va-qz2U6OIqanOt6BsAPU-omGIe_yoJCCZwrgyQdDf0"
