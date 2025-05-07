@@ -1,0 +1,224 @@
+# ConfigMap para configurações não sensíveis
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airport-config
+  namespace: default
+data:
+  DATABASE_URL: "postgresql://gabriel:1411@postgres-service:5432/airport_db"
+  TOKEN_EXPIRATION_MINUTES: "30"
+
+---
+# Secret para configurações sensíveis (agora com base64 certo)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: airport-secrets
+  namespace: default
+type: Opaque
+data:
+  SECRET_KEY: eW91ci1zZWN1cmUtc2VjcmV0LWtleQ==  # your-secure-secret-key (base64)
+  POSTGRES_USER: Z2FicmllbA==                  # gabriel (base64)
+  POSTGRES_PASSWORD: MTQxMQ==                  # 1411 (base64)
+
+---
+# PersistentVolumeClaim para PostgreSQL
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# Deployment para PostgreSQL
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:13
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: airport-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: airport-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              value: airport_db
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+
+---
+# Service para PostgreSQL
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: default
+spec:
+  selector:
+    app: postgres
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
+
+---
+# Deployment para o microserviço auth
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth
+  template:
+    metadata:
+      labels:
+        app: auth
+    spec:
+      containers:
+        - name: auth
+          image: auth-service:latest
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: airport-config
+                  key: DATABASE_URL
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: airport-secrets
+                  key: SECRET_KEY
+            - name: TOKEN_EXPIRATION_MINUTES
+              valueFrom:
+                configMapKeyRef:
+                  name: airport-config
+                  key: TOKEN_EXPIRATION_MINUTES
+          ports:
+            - containerPort: 5000
+          livenessProbe:
+            httpGet:
+              path: /auth/health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /auth/health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+---
+# Service para o microserviço auth
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: default
+spec:
+  selector:
+    app: auth
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+  type: LoadBalancer
+
+---
+# Deployment para o microserviço flights
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flights
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: flights
+  template:
+    metadata:
+      labels:
+        app: flights
+    spec:
+      containers:
+        - name: flights
+          image: flights-backend:latest
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: airport-config
+                  key: DATABASE_URL
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: airport-secrets
+                  key: SECRET_KEY
+          ports:
+            - containerPort: 5001
+          livenessProbe:
+            httpGet:
+              path: /flights/health
+              port: 5001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /flights/health
+              port: 5001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+---
+# Service para o microserviço flights
+apiVersion: v1
+kind: Service
+metadata:
+  name: flights-service
+  namespace: default
+spec:
+  selector:
+    app: flights
+  ports:
+    - protocol: TCP
+      port: 5001
+      targetPort: 5001
+  type: LoadBalancer
